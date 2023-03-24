@@ -7,7 +7,7 @@ namespace Neoflix.Challenges
     {
         public override Task SetupAsync() => Task.CompletedTask;
 
-        [Test, Order(1)]
+        [Test, Order(1), OneTimeSetUp]
         public async Task InitDriverAsync_should_create_driver_and_connect_to_server()
         {
             var (uri, username, password) = Config.UnpackNeo4jConfig();
