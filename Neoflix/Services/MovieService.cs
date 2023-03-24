@@ -41,7 +41,7 @@ namespace Neoflix.Services
             Ordering order = Ordering.Asc, int limit = 6, int skip = 0, string userId = null)
         {
             // TODO: Open an Session
-            using var session = _driver.AsyncSession();
+            await using var session = _driver.AsyncSession();
             // TODO: Execute a query in a new Read Transaction
             var res = await session.ExecuteReadAsync(async tx => {
                 var cursor = await tx.RunAsync(@$"

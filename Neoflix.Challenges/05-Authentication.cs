@@ -13,6 +13,7 @@ namespace Neoflix.Challenges
         private const string Name = "Authenticated User";
         private bool[] successes = {false, false, false};
 
+        [OneTimeSetUp]
         public override async Task SetupAsync()
         {
             await base.SetupAsync();
@@ -21,9 +22,10 @@ namespace Neoflix.Challenges
                 tx.RunAsync("MATCH (u:User {email: $email}) DETACH DELETE u", new {email = Email}));
         }
 
+        [OneTimeTearDown]
         public override async Task TeardownAsync()
         {
-            if (successes.All(x => x))
+            if (successes.Any(x => x))
             {
                 await using var session = Neo4j.Driver.AsyncSession();
                 await session.ExecuteWriteAsync(tx => tx.RunAsync(@"
