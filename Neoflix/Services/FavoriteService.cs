@@ -38,11 +38,26 @@ namespace Neoflix.Services
         public async Task<Dictionary<string, object>[]> AllAsync(string userId, string sort = "title",
             Ordering order = Ordering.Asc, int limit = 6, int skip = 0)
         {
-            // TODO: Open a new session
-            // TODO: Retrieve a list of movies added to a user's favorites
-            // TODO: Close session
+            await using var session = _driver.AsyncSession();
 
-            return await Task.FromResult(Fixtures.Popular);
+            return await session.ExecuteReadAsync(async tx =>
+            {
+                var query = $@"
+            MATCH (u:User {{userId: $userId}})-[r:HAS_FAVORITE]->(m:Movie)
+            RETURN m {{
+                .*,
+                favorite: true
+            }} AS movie
+            ORDER BY m.{sort} {order.ToString("G").ToUpper()}
+            SKIP $skip
+            LIMIT $limit";
+
+                var cursor = await tx.RunAsync(query, new { userId, skip, limit });
+                var records = await cursor.ToListAsync();
+                return records
+                    .Select(record => record["movie"].As<Dictionary<string, object>>())
+                    .ToArray();
+            });
         }
         // end::all[]
 
@@ -57,17 +72,38 @@ namespace Neoflix.Services
         /// The task result contains The updated movie record with `favorite` set to true.
         /// </returns>
         // tag::add[]
-        public Task<Dictionary<string, object>> AddAsync(string userId, string movieId)
+        public async Task<Dictionary<string, object>> AddAsync(string userId, string movieId)
         {
             // TODO: Open a new Session
+            await using var session = _driver.AsyncSession();
             // TODO: Create HAS_FAVORITE relationship within a Write Transaction
-            // TODO: Close the session
-            // TODO: Return movie details and `favorite` property
-            var data = Fixtures.Goodfellas
-                .Concat(new[] {new KeyValuePair<string, object>("favorite", true)})
-                .ToDictionary(x => x.Key, x => x.Value);
+            var updatedMovie = await session.ExecuteWriteAsync(async tx =>
+            {
+                var query = @"
+                    MATCH (u:User {userId: $userId})
+                    MATCH (m:Movie {tmdbId: $movieId})
+    
+                    MERGE (u)-[r:HAS_FAVORITE]->(m)
+                    ON CREATE SET u.createdAt = datetime()
 
-            return Task.FromResult(data);
+                    RETURN m {
+                        .*,
+                        favorite: true
+                    } AS movie";
+                var cursor = await tx.RunAsync(query, new { userId, movieId });
+
+                if (!await cursor.FetchAsync())
+                    return null;
+
+                return cursor.Current["movie"].As<Dictionary<string, object>>();
+            });
+
+            if (updatedMovie == null)
+                throw new NotFoundException($"Could not create rating for Movie: {movieId} for User: {userId}");
+            // TODO: Close the session
+            await session.CloseAsync();
+
+            return updatedMovie;
         }
         // end::add[]
 
@@ -82,18 +118,35 @@ namespace Neoflix.Services
         /// The task result contains The updated movie record with `favorite` set to false.
         /// </returns>
         // tag::remove[]
-        public Task<Dictionary<string, object>> RemoveAsync(string userId, string movieId)
+        public async Task<Dictionary<string, object>> RemoveAsync(string userId, string movieId)
         {
             // TODO: Open a new Session
+            await using var session = _driver.AsyncSession();
             // TODO: Delete the HAS_FAVORITE relationship within a Write Transaction
+            var updatedMovie = await session.ExecuteWriteAsync(async tx =>
+            {
+                var query = @"
+                    MATCH (u:User {userId: $userId})-[r:HAS_FAVORITE]->(m:Movie {tmdbId: $movieId})
+                    DELETE r
+
+                    RETURN m {
+                        .*,
+                        favorite: false
+                    } AS movie";
+                var cursor = await tx.RunAsync(query, new { userId, movieId });
+
+                if (!await cursor.FetchAsync())
+                    return null;
+
+                return cursor.Current["movie"].As<Dictionary<string, object>>();
+            });
+
+            if (updatedMovie == null)
+                throw new NotFoundException($"Could not create rating for Movie: {movieId} for User: {userId}");
             // TODO: Close the session
-            // TODO: Return movie details and `favorite` property
+            await session.CloseAsync();
 
-            var data = Fixtures.Goodfellas
-                .Concat(new[] {new KeyValuePair<string, object>("favorite", true)})
-                .ToDictionary(x => x.Key, x => x.Value);
-
-            return Task.FromResult(data);
+            return updatedMovie;
         }
         // end::remove[]
     }

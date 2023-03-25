@@ -58,8 +58,38 @@ namespace Neoflix.Services
         {
             // TODO: Convert the native integer into a Neo4j Integer
             // TODO: Save the rating in the database
+            await using var session = _driver.AsyncSession();
+
+            var updatedMovie = await session.ExecuteWriteAsync(async tx =>
+            {
+                var cursor = await tx.RunAsync(@"
+                    MATCH (u:User {userId: $userId})
+                    MATCH (m:Movie {tmdbId: $movieId})
+        
+                    MERGE (u)-[r:RATED]->(m)
+                    SET r.rating = $rating,
+                        r.timestamp = timestamp()
+        
+                    RETURN m {
+                        .*,
+                        rating: r.rating
+                    } as movie", new
+                            {
+                                userId,
+                                movieId,
+                                rating
+                            });
+
+                if (!await cursor.FetchAsync())
+                    return null;
+
+                return cursor.Current["movie"].As<Dictionary<string, object>>();
+            });
             // TODO: Return movie details and a rating
-            return await Task.FromResult(Fixtures.Goodfellas);
+            if (updatedMovie == null)
+                throw new NotFoundException($"Could not create rating for Movie: {movieId} for User: {userId}");
+
+            return updatedMovie;
         }
         // end::add[]
     }
